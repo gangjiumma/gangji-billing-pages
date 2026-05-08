@@ -144,6 +144,9 @@ function BillingPageContent() {
           ? '결제 시스템 준비 중...'
           : '카드 등록하고 시작하기'}
       </button>
+
+      {/* 안드로이드 네비게이션 바 안전 영역 */}
+      <div style={styles.bottomSpacer} />
     </main>
   );
 }
@@ -175,16 +178,15 @@ function LoadingFallback() {
 }
 
 // ─────────────────────────────────────────
-// 인라인 스타일
+// 인라인 스타일 — 자연스러운 레이아웃 (flex-grow 제거)
 // ─────────────────────────────────────────
 const styles: Record<string, React.CSSProperties> = {
   container: {
     maxWidth: 480,
     margin: '0 auto',
-    padding: '32px 20px',
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
+    padding: '32px 20px 20px 20px', // 하단 padding 줄임
+    // ⭐ flex 레이아웃 제거 — 콘텐츠가 자연스럽게 위에서부터 쌓임
+    // 버튼이 카드 바로 아래에 붙어 보이고, 화면이 작으면 자연스럽게 스크롤
   },
   loadingContainer: {
     minHeight: '100vh',
@@ -220,7 +222,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #FFE4CC',
     borderRadius: 14,
     padding: 20,
-    marginBottom: 32,
+    marginBottom: 20, // 32 → 20 (간격 줄임)
   },
   infoRow: {
     display: 'flex',
@@ -250,7 +252,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#F9FAFB',
     borderRadius: 10,
     padding: '14px 16px',
-    marginBottom: 24,
+    marginBottom: 20, // 24 → 20
     fontSize: 12,
     color: '#6B7280',
     lineHeight: 1.6,
@@ -265,8 +267,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 16,
     fontWeight: 800,
     cursor: 'pointer',
-    marginTop: 'auto',
     transition: 'opacity 0.15s',
+    // ⭐ marginTop: 'auto' 제거 — 자연스럽게 카드 바로 아래에 위치
   },
   buttonDisabled: {
     background: '#D1D5DB',
@@ -280,5 +282,10 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 16,
     color: '#DC2626',
     fontSize: 13,
+  },
+  // ⭐ 안드로이드 하단 네비게이션 바 안전 영역 (버튼 가림 방지)
+  bottomSpacer: {
+    height: 'env(safe-area-inset-bottom, 24px)',
+    minHeight: 24,
   },
 };
