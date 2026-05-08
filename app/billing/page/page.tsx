@@ -5,13 +5,10 @@ import { useSearchParams } from 'next/navigation';
 import Script from 'next/script';
 
 // ─────────────────────────────────────────
-// 플랜 정보 (서버 결정)
+// Edge Function URL (DB 조회용)
 // ─────────────────────────────────────────
-const PLANS: Record<string, { name: string; price: number }> = {
-  lite: { name: '라이트', price: 49000 },
-  basic: { name: '베이직', price: 99000 },
-  pro: { name: '프로', price: 199000 },
-};
+const EDGE_FUNCTION_BASE =
+  'https://druwwrpunuxpvjbsrcls.supabase.co/functions/v1/gangji-billing';
 
 // 토스 SDK 타입
 declare global {
@@ -20,22 +17,65 @@ declare global {
   }
 }
 
+// 플랜 정보 타입 (DB 응답)
+interface PlanInfo {
+  id: string;
+  name: string;
+  description: string | null;
+  price_monthly: number;
+  features: Record<string, any> | null;
+  is_active: boolean;
+  release_label: string | null;
+}
+
 // ─────────────────────────────────────────
-// 메인 컴포넌트 (Suspense로 감쌀 내부)
+// 메인 컴포넌트
 // ─────────────────────────────────────────
 function BillingPageContent() {
   const params = useSearchParams();
   const customerKey = params.get('customerKey') || '';
   const orderId = params.get('orderId') || '';
-  const plan = params.get('plan') || 'lite';
-  const planInfo = PLANS[plan] || PLANS.lite;
+  const planId = params.get('plan') || 'lite';
 
+  const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null);
+  const [planLoading, setPlanLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
 
   const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || '';
 
+  // 1. DB에서 플랜 정보 가져오기 (마운트 시)
+  useEffect(() => {
+    const fetchPlan = async () => {
+      try {
+        setPlanLoading(true);
+        const res = await fetch(
+          `${EDGE_FUNCTION_BASE}/get-plan-info?plan=${planId}`,
+        );
+        const data = await res.json();
+
+        if (!data.ok || !data.plan) {
+          throw new Error(data.message || '플랜 정보를 가져오지 못했어요');
+        }
+
+        setPlanInfo(data.plan);
+      } catch (err) {
+        console.error('plan fetch error:', err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : '플랜 정보를 불러오는 중 오류가 발생했어요. 다시 시도해주세요.',
+        );
+      } finally {
+        setPlanLoading(false);
+      }
+    };
+
+    fetchPlan();
+  }, [planId]);
+
+  // 2. 파라미터 검증
   useEffect(() => {
     if (!customerKey || !orderId) {
       setError('필수 정보가 누락되었어요. 앱에서 다시 시도해주세요.');
@@ -44,6 +84,7 @@ function BillingPageContent() {
     }
   }, [customerKey, orderId, clientKey]);
 
+  // 3. 토스 SDK 로드 감지
   useEffect(() => {
     const check = setInterval(() => {
       if (typeof window !== 'undefined' && window.TossPayments) {
@@ -55,6 +96,7 @@ function BillingPageContent() {
     return () => clearInterval(check);
   }, []);
 
+  // 4. 카드 등록 요청
   const handleRequest = async () => {
     if (!customerKey || !orderId || !clientKey) {
       setError('필수 정보가 누락되었어요. 앱을 다시 시도해주세요.');
@@ -63,6 +105,11 @@ function BillingPageContent() {
 
     if (!sdkReady) {
       setError('결제 시스템 준비 중이에요. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+
+    if (!planInfo) {
+      setError('플랜 정보를 아직 불러오지 못했어요. 잠시 후 다시 시도해주세요.');
       return;
     }
 
@@ -91,6 +138,30 @@ function BillingPageContent() {
     }
   };
 
+  // ─── 플랜 정보 로딩 중 ───
+  if (planLoading) {
+    return (
+      <main style={styles.container}>
+        <div style={styles.logo}>🐾</div>
+        <p style={{ fontSize: 14, color: '#6B7280', textAlign: 'center', marginTop: 40 }}>
+          플랜 정보를 확인하고 있어요...
+        </p>
+      </main>
+    );
+  }
+
+  // ─── 플랜 정보 없음 (에러) ───
+  if (!planInfo) {
+    return (
+      <main style={styles.container}>
+        <div style={styles.logo}>😢</div>
+        <h1 style={styles.title}>플랜 정보를 불러올 수 없어요</h1>
+        <p style={styles.subtitle}>잠시 후 다시 시도해주세요.</p>
+        {error && <div style={styles.errorBox}>⚠️ {error}</div>}
+      </main>
+    );
+  }
+
   return (
     <main style={styles.container}>
       <div style={styles.logo}>🐾</div>
@@ -109,7 +180,7 @@ function BillingPageContent() {
         <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
           <span style={styles.infoLabel}>월 구독료</span>
           <span style={{ ...styles.infoValue, ...styles.infoValueBrand }}>
-            {planInfo.price.toLocaleString()}원
+            {planInfo.price_monthly.toLocaleString()}원
           </span>
         </div>
         <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
@@ -145,14 +216,13 @@ function BillingPageContent() {
           : '카드 등록하고 시작하기'}
       </button>
 
-      {/* 안드로이드 네비게이션 바 안전 영역 */}
       <div style={styles.bottomSpacer} />
     </main>
   );
 }
 
 // ─────────────────────────────────────────
-// 외부 export — Suspense로 감쌈 (Next.js 16 호환)
+// 외부 export — Suspense
 // ─────────────────────────────────────────
 export default function BillingPage() {
   return (
@@ -178,15 +248,13 @@ function LoadingFallback() {
 }
 
 // ─────────────────────────────────────────
-// 인라인 스타일 — 자연스러운 레이아웃 (flex-grow 제거)
+// 인라인 스타일 (v3와 동일)
 // ─────────────────────────────────────────
 const styles: Record<string, React.CSSProperties> = {
   container: {
     maxWidth: 480,
     margin: '0 auto',
-    padding: '32px 20px 20px 20px', // 하단 padding 줄임
-    // ⭐ flex 레이아웃 제거 — 콘텐츠가 자연스럽게 위에서부터 쌓임
-    // 버튼이 카드 바로 아래에 붙어 보이고, 화면이 작으면 자연스럽게 스크롤
+    padding: '32px 20px 20px 20px',
   },
   loadingContainer: {
     minHeight: '100vh',
@@ -222,7 +290,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #FFE4CC',
     borderRadius: 14,
     padding: 20,
-    marginBottom: 20, // 32 → 20 (간격 줄임)
+    marginBottom: 20,
   },
   infoRow: {
     display: 'flex',
@@ -252,7 +320,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#F9FAFB',
     borderRadius: 10,
     padding: '14px 16px',
-    marginBottom: 20, // 24 → 20
+    marginBottom: 20,
     fontSize: 12,
     color: '#6B7280',
     lineHeight: 1.6,
@@ -268,7 +336,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     cursor: 'pointer',
     transition: 'opacity 0.15s',
-    // ⭐ marginTop: 'auto' 제거 — 자연스럽게 카드 바로 아래에 위치
   },
   buttonDisabled: {
     background: '#D1D5DB',
@@ -283,7 +350,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#DC2626',
     fontSize: 13,
   },
-  // ⭐ 안드로이드 하단 네비게이션 바 안전 영역 (버튼 가림 방지)
   bottomSpacer: {
     height: 'env(safe-area-inset-bottom, 24px)',
     minHeight: 24,
