@@ -1,14 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-export default function BillingSuccessPage() {
+function BillingSuccessContent() {
   const params = useSearchParams();
   const authKey = params.get('authKey');
   const customerKey = params.get('customerKey');
 
-  // RN WebView로 알림
   useEffect(() => {
     const notify = () => {
       try {
@@ -30,7 +29,6 @@ export default function BillingSuccessPage() {
     };
 
     notify();
-    // 안드로이드에서 onNavigationStateChange 늦게 발화하는 케이스 대비
     const t = setTimeout(notify, 200);
     return () => clearTimeout(t);
   }, [authKey, customerKey]);
@@ -45,24 +43,33 @@ export default function BillingSuccessPage() {
         잠시만 기다려주세요...
       </p>
       <div style={styles.spinner} />
-      <style jsx>{`
+      <style>{`
         @keyframes pop {
-          0% {
-            transform: scale(0);
-          }
-          80% {
-            transform: scale(1.1);
-          }
-          100% {
-            transform: scale(1);
-          }
+          0% { transform: scale(0); }
+          80% { transform: scale(1.1); }
+          100% { transform: scale(1); }
         }
         @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
+          to { transform: rotate(360deg); }
         }
       `}</style>
+    </main>
+  );
+}
+
+export default function BillingSuccessPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <BillingSuccessContent />
+    </Suspense>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <main style={styles.container}>
+      <div style={{ fontSize: 56 }}>🐾</div>
+      <p style={{ fontSize: 14, color: '#6B7280' }}>로딩 중...</p>
     </main>
   );
 }

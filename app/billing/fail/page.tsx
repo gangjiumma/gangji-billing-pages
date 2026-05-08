@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-// 친화 메시지 매핑
 const FRIENDLY_MESSAGES: Record<string, string> = {
   PAY_PROCESS_CANCELED: '결제 진행을 취소하셨어요.',
   PAY_PROCESS_ABORTED: '결제가 도중에 중단되었어요. 다시 시도해주세요.',
@@ -18,7 +17,7 @@ const FRIENDLY_MESSAGES: Record<string, string> = {
   USER_CANCEL: '결제를 취소하셨어요.',
 };
 
-export default function BillingFailPage() {
+function BillingFailContent() {
   const params = useSearchParams();
   const errorCode = params.get('code') || 'UNKNOWN';
   const errorMessageRaw = params.get('message') || '알 수 없는 오류가 발생했어요.';
@@ -26,7 +25,6 @@ export default function BillingFailPage() {
   const friendly = FRIENDLY_MESSAGES[errorCode];
   const displayMessage = friendly || errorMessageRaw;
 
-  // RN WebView로 알림 (자동)
   useEffect(() => {
     const notify = () => {
       try {
@@ -52,7 +50,6 @@ export default function BillingFailPage() {
     return () => clearTimeout(t);
   }, [errorCode, displayMessage]);
 
-  // 사용자 명시적으로 돌아가기
   const handleGoBack = () => {
     try {
       if (
@@ -90,6 +87,23 @@ export default function BillingFailPage() {
       <button style={styles.button} onClick={handleGoBack}>
         앱으로 돌아가기
       </button>
+    </main>
+  );
+}
+
+export default function BillingFailPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <BillingFailContent />
+    </Suspense>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <main style={styles.container}>
+      <div style={{ fontSize: 56 }}>🐾</div>
+      <p style={{ fontSize: 14, color: '#6B7280' }}>로딩 중...</p>
     </main>
   );
 }

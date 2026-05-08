@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Script from 'next/script';
 
 // ─────────────────────────────────────────
-// 플랜 정보 (서버 결정 — 클라이언트가 임의로 못 바꾸게)
+// 플랜 정보 (서버 결정)
 // ─────────────────────────────────────────
 const PLANS: Record<string, { name: string; price: number }> = {
   lite: { name: '라이트', price: 49000 },
@@ -13,14 +13,17 @@ const PLANS: Record<string, { name: string; price: number }> = {
   pro: { name: '프로', price: 199000 },
 };
 
-// 토스 SDK 타입 (any로 처리 — 글로벌 객체)
+// 토스 SDK 타입
 declare global {
   interface Window {
     TossPayments: any;
   }
 }
 
-export default function BillingPage() {
+// ─────────────────────────────────────────
+// 메인 컴포넌트 (Suspense로 감쌀 내부)
+// ─────────────────────────────────────────
+function BillingPageContent() {
   const params = useSearchParams();
   const customerKey = params.get('customerKey') || '';
   const orderId = params.get('orderId') || '';
@@ -31,10 +34,8 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
 
-  // 환경변수에서 토스 클라이언트 키
   const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || '';
 
-  // 초기 검증
   useEffect(() => {
     if (!customerKey || !orderId) {
       setError('필수 정보가 누락되었어요. 앱에서 다시 시도해주세요.');
@@ -43,7 +44,6 @@ export default function BillingPage() {
     }
   }, [customerKey, orderId, clientKey]);
 
-  // 토스 SDK 로드 완료 감지
   useEffect(() => {
     const check = setInterval(() => {
       if (typeof window !== 'undefined' && window.TossPayments) {
@@ -55,7 +55,6 @@ export default function BillingPage() {
     return () => clearInterval(check);
   }, []);
 
-  // 카드 등록 요청
   const handleRequest = async () => {
     if (!customerKey || !orderId || !clientKey) {
       setError('필수 정보가 누락되었어요. 앱을 다시 시도해주세요.');
@@ -74,7 +73,6 @@ export default function BillingPage() {
       const tossPayments = window.TossPayments(clientKey);
       const payment = tossPayments.payment({ customerKey });
 
-      // successUrl/failUrl — 같은 도메인의 다른 라우트
       const origin = window.location.origin;
       const successUrl = `${origin}/billing/success`;
       const failUrl = `${origin}/billing/fail`;
@@ -86,7 +84,7 @@ export default function BillingPage() {
         customerEmail: '',
         customerName: '',
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('requestBillingAuth error:', err);
       setError('결제창을 여는 중 오류가 발생했어요. 다시 시도해주세요.');
       setLoading(false);
@@ -94,76 +92,90 @@ export default function BillingPage() {
   };
 
   return (
-    <>
-      {/* 토스페이먼츠 SDK */}
-      <Script
-        src="https://js.tosspayments.com/v2/standard"
-        strategy="afterInteractive"
-      />
+    <main style={styles.container}>
+      <div style={styles.logo}>🐾</div>
+      <h1 style={styles.title}>결제 카드 등록</h1>
+      <p style={styles.subtitle}>
+        구독 결제를 위해 카드를 등록해요.
+        <br />
+        8월 1일부터 자동결제가 시작돼요.
+      </p>
 
-      <main style={styles.container}>
-        <div style={styles.logo}>🐾</div>
-        <h1 style={styles.title}>결제 카드 등록</h1>
-        <p style={styles.subtitle}>
-          구독 결제를 위해 카드를 등록해요.
-          <br />
-          8월 1일부터 자동결제가 시작돼요.
-        </p>
-
-        <div style={styles.infoBox}>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>선택 플랜</span>
-            <span style={styles.infoValue}>{planInfo.name}</span>
-          </div>
-          <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
-            <span style={styles.infoLabel}>월 구독료</span>
-            <span style={{ ...styles.infoValue, ...styles.infoValueBrand }}>
-              {planInfo.price.toLocaleString()}원
-            </span>
-          </div>
-          <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
-            <span style={styles.infoLabel}>무료 체험 기간</span>
-            <span style={styles.infoValue}>14일 무료</span>
-          </div>
+      <div style={styles.infoBox}>
+        <div style={styles.infoRow}>
+          <span style={styles.infoLabel}>선택 플랜</span>
+          <span style={styles.infoValue}>{planInfo.name}</span>
         </div>
-
-        <div style={styles.notice}>
-          💡 <b>지금 등록해도 결제는 8월 1일부터 시작돼요.</b>
-          <br />
-          • 8월 1일 이전에 가입하시면 7/31까지 전부 무료
-          <br />
-          • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 저장돼요
-          <br />
-          • 언제든 구독을 취소할 수 있어요
+        <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
+          <span style={styles.infoLabel}>월 구독료</span>
+          <span style={{ ...styles.infoValue, ...styles.infoValueBrand }}>
+            {planInfo.price.toLocaleString()}원
+          </span>
         </div>
+        <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
+          <span style={styles.infoLabel}>무료 체험 기간</span>
+          <span style={styles.infoValue}>14일 무료</span>
+        </div>
+      </div>
 
-        {error && (
-          <div style={styles.errorBox}>
-            ⚠️ {error}
-          </div>
-        )}
+      <div style={styles.notice}>
+        💡 <b>지금 등록해도 결제는 8월 1일부터 시작돼요.</b>
+        <br />
+        • 8월 1일 이전에 가입하시면 7/31까지 전부 무료
+        <br />
+        • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 저장돼요
+        <br />
+        • 언제든 구독을 취소할 수 있어요
+      </div>
 
-        <button
-          style={{
-            ...styles.button,
-            ...(loading || !sdkReady ? styles.buttonDisabled : {}),
-          }}
-          onClick={handleRequest}
-          disabled={loading || !sdkReady || !!error}
-        >
-          {loading
-            ? '결제창을 여는 중...'
-            : !sdkReady
-            ? '결제 시스템 준비 중...'
-            : '카드 등록하고 시작하기'}
-        </button>
-      </main>
-    </>
+      {error && <div style={styles.errorBox}>⚠️ {error}</div>}
+
+      <button
+        style={{
+          ...styles.button,
+          ...(loading || !sdkReady ? styles.buttonDisabled : {}),
+        }}
+        onClick={handleRequest}
+        disabled={loading || !sdkReady || !!error}
+      >
+        {loading
+          ? '결제창을 여는 중...'
+          : !sdkReady
+          ? '결제 시스템 준비 중...'
+          : '카드 등록하고 시작하기'}
+      </button>
+    </main>
   );
 }
 
 // ─────────────────────────────────────────
-// 인라인 스타일 (Tailwind 없이)
+// 외부 export — Suspense로 감쌈 (Next.js 16 호환)
+// ─────────────────────────────────────────
+export default function BillingPage() {
+  return (
+    <>
+      <Script
+        src="https://js.tosspayments.com/v2/standard"
+        strategy="afterInteractive"
+      />
+      <Suspense fallback={<LoadingFallback />}>
+        <BillingPageContent />
+      </Suspense>
+    </>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <main style={styles.loadingContainer}>
+      <div style={styles.logo}>🐾</div>
+      <p style={{ fontSize: 14, color: '#6B7280' }}>로딩 중...</p>
+    </main>
+  );
+}
+
+// ─────────────────────────────────────────
+// 인라인 스타일
 // ─────────────────────────────────────────
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -173,6 +185,15 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
+  },
+  loadingContainer: {
+    minHeight: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    textAlign: 'center',
   },
   logo: {
     fontSize: 56,
