@@ -12,13 +12,10 @@ const EDGE_FUNCTION_BASE =
 
 // ─────────────────────────────────────────
 // 7/15 룰 — 가입 시점 기준 메시지 분기
-// KST 2026-07-15 23:59:59까지 등록한 사용자: "7/31까지 무료" 메시지
-// 그 이후 등록자: "14일 무료체험" 메시지
 // ─────────────────────────────────────────
 const PRE_LAUNCH_DEADLINE_KST = new Date('2026-07-15T23:59:59+09:00').getTime();
 const isPreLaunchPeriod = () => Date.now() <= PRE_LAUNCH_DEADLINE_KST;
 
-// 토스 SDK 타입
 declare global {
   interface Window {
     TossPayments: any;
@@ -47,12 +44,12 @@ function BillingPageContent() {
   const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null); // ⭐ v17: 디버그 정보
   const [loading, setLoading] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
 
   const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || '';
 
-  // 7/15 룰 메시지 분기 (마운트 시 한 번 결정)
   const preLaunch = isPreLaunchPeriod();
 
   // 1. DB에서 플랜 정보 가져오기
@@ -125,27 +122,65 @@ function BillingPageContent() {
 
     setLoading(true);
     setError(null);
+    setDebugInfo(null);
+
+    // ⭐ v17 fix: 디버깅용 — 호출 직전 상태 모두 캡쳐
+    const debugBefore = {
+      clientKey: clientKey.slice(0, 20) + '...',
+      customerKey: customerKey.slice(0, 12) + '...',
+      orderId: orderId.slice(0, 30) + '...',
+      origin: window.location.origin,
+      sdkReady,
+      planInfo: planInfo.id,
+      userAgent: navigator.userAgent.slice(0, 80),
+    };
+    console.log('[Billing] before requestBillingAuth:', debugBefore);
 
     try {
       const tossPayments = window.TossPayments(clientKey);
+      console.log('[Billing] tossPayments instance:', tossPayments);
+
       const payment = tossPayments.payment({ customerKey });
+      console.log('[Billing] payment instance:', payment);
 
       const origin = window.location.origin;
       const successUrl = `${origin}/billing/success`;
       const failUrl = `${origin}/billing/fail`;
 
-      // ⭐ v17 fix: customerEmail / customerName 완전히 제거
-      // 토스 v2 SDK는 빈 문자열을 INVALID_REQUEST로 거부하는 경우가 있어
-      // 사용자 정보 없이는 옵션 객체에 아예 포함하지 않는 게 안전
-      await payment.requestBillingAuth({
-        method: 'CARD',
+      // ⭐ v17 fix: customerEmail / customerName 더미값으로 채워넣기
+      // 공식 샘플 코드도 더미값을 넣음 (https://velog.io/@yoonvelog/...)
+      // 빈 문자열로 두면 일부 환경에서 INVALID_REQUEST 발생
+      // 실제 사용자 이메일/이름이 없는 경우 식별 가능한 더미값 사용
+      const requestPayload = {
+        method: 'CARD' as const,
         successUrl,
         failUrl,
-      });
-    } catch (err: any) {
-      console.error('requestBillingAuth error:', err);
+        customerEmail: 'customer@gangji-mama.com',  // 더미 이메일
+        customerName: '강쥐엄마 회원',                 // 더미 이름
+      };
+      console.log('[Billing] requestPayload:', requestPayload);
 
-      // ⭐ v17 fix: 진짜 에러 코드/메시지 사용자에게 노출 (디버깅용)
+      await payment.requestBillingAuth(requestPayload);
+
+      // 여기 도달하면 successUrl로 리다이렉트되거나 결제창 닫힘
+      console.log('[Billing] requestBillingAuth resolved (창이 닫힘)');
+    } catch (err: any) {
+      console.error('[Billing] requestBillingAuth error:', err);
+      console.error('[Billing] error keys:', Object.keys(err || {}));
+      console.error('[Billing] error.code:', err?.code);
+      console.error('[Billing] error.message:', err?.message);
+      console.error('[Billing] error.name:', err?.name);
+      console.error('[Billing] error.stack:', err?.stack?.slice(0, 200));
+
+      // ⭐ v17 fix: 진짜 에러 정보 노출 (디버깅용 — 화면에 펼쳐 보임)
+      const errorDetails = [
+        `code: ${err?.code || 'N/A'}`,
+        `name: ${err?.name || 'N/A'}`,
+        `message: ${err?.message || 'N/A'}`,
+        `origin: ${window.location.origin}`,
+      ].join('\n');
+      setDebugInfo(errorDetails);
+
       let errMsg = '결제창을 여는 중 오류가 발생했어요.';
       if (err?.code) {
         errMsg += `\n[${err.code}]`;
@@ -154,11 +189,11 @@ function BillingPageContent() {
         errMsg += ` ${err.message}`;
       }
 
-      // 사용자가 닫기를 누른 경우는 에러로 표시 X
       if (err?.code === 'USER_CANCEL') {
         setError(null);
+        setDebugInfo(null);
       } else {
-        setError(errMsg + '\n\n다시 시도해주세요.');
+        setError(errMsg);
       }
       setLoading(false);
     }
@@ -176,7 +211,7 @@ function BillingPageContent() {
     );
   }
 
-  // ─── 플랜 정보 없음 (에러) ───
+  // ─── 플랜 정보 없음 ───
   if (!planInfo) {
     return (
       <main style={styles.container}>
@@ -188,7 +223,6 @@ function BillingPageContent() {
     );
   }
 
-  // 7/15 룰 메시지 결정
   const trialTitle = preLaunch
     ? '🎉 7월 31일까지 100% 무료!'
     : '🎁 14일 무료체험 시작';
@@ -225,7 +259,6 @@ function BillingPageContent() {
         </div>
       </div>
 
-      {/* ⭐ v17: 7/15 룰 메시지 분기 */}
       <div style={preLaunch ? styles.noticeBrand : styles.notice}>
         <div style={styles.noticeTitle}>{trialTitle}</div>
         <div style={styles.noticeBody}>
@@ -253,6 +286,14 @@ function BillingPageContent() {
 
       {error && <div style={styles.errorBox}>⚠️ {error}</div>}
 
+      {/* ⭐ v17: 디버그 정보 박스 — 에러 발생 시 자세한 정보 표시 */}
+      {debugInfo && (
+        <details style={styles.debugBox}>
+          <summary style={styles.debugSummary}>🔍 디버그 정보 (눌러서 펼치기)</summary>
+          <pre style={styles.debugPre}>{debugInfo}</pre>
+        </details>
+      )}
+
       <button
         style={{
           ...styles.button,
@@ -273,9 +314,6 @@ function BillingPageContent() {
   );
 }
 
-// ─────────────────────────────────────────
-// 외부 export — Suspense
-// ─────────────────────────────────────────
 export default function BillingPage() {
   return (
     <>
@@ -299,9 +337,6 @@ function LoadingFallback() {
   );
 }
 
-// ─────────────────────────────────────────
-// 인라인 스타일
-// ─────────────────────────────────────────
 const styles: Record<string, React.CSSProperties> = {
   container: {
     maxWidth: 480,
@@ -368,7 +403,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 18,
     fontWeight: 800,
   },
-  // ⭐ v17: pre-launch (7/15 이전) 강조 박스
   noticeBrand: {
     background: '#FFF4E6',
     border: '1.5px solid #FFCDB8',
@@ -378,7 +412,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#374151',
     lineHeight: 1.7,
   },
-  // 일반 (14일 무료체험)
   notice: {
     background: '#F9FAFB',
     border: '1px solid #E5E7EB',
@@ -423,7 +456,32 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 16,
     color: '#DC2626',
     fontSize: 13,
-    whiteSpace: 'pre-wrap', // 에러 메시지 줄바꿈 처리
+    whiteSpace: 'pre-wrap',
+  },
+  debugBox: {
+    background: '#FFFBEB',
+    border: '1px solid #FCD34D',
+    borderRadius: 10,
+    padding: '8px 12px',
+    marginBottom: 16,
+    fontSize: 12,
+    color: '#78350F',
+  },
+  debugSummary: {
+    cursor: 'pointer',
+    fontWeight: 700,
+    padding: '4px 0',
+    userSelect: 'none',
+  },
+  debugPre: {
+    margin: '8px 0 0 0',
+    padding: '8px',
+    background: '#FEF3C7',
+    borderRadius: 6,
+    fontSize: 11,
+    overflowX: 'auto',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
   },
   bottomSpacer: {
     height: 'env(safe-area-inset-bottom, 24px)',
