@@ -10,6 +10,14 @@ import Script from 'next/script';
 const EDGE_FUNCTION_BASE =
   'https://druwwrpunuxpvjbsrcls.supabase.co/functions/v1/gangji-billing';
 
+// ─────────────────────────────────────────
+// 7/15 룰 — 가입 시점 기준 메시지 분기
+// KST 2026-07-15 23:59:59까지 등록한 사용자: "7/31까지 무료" 메시지
+// 그 이후 등록자: "14일 무료체험" 메시지
+// ─────────────────────────────────────────
+const PRE_LAUNCH_DEADLINE_KST = new Date('2026-07-15T23:59:59+09:00').getTime();
+const isPreLaunchPeriod = () => Date.now() <= PRE_LAUNCH_DEADLINE_KST;
+
 // 토스 SDK 타입
 declare global {
   interface Window {
@@ -17,7 +25,6 @@ declare global {
   }
 }
 
-// 플랜 정보 타입 (DB 응답)
 interface PlanInfo {
   id: string;
   name: string;
@@ -45,7 +52,10 @@ function BillingPageContent() {
 
   const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || '';
 
-  // 1. DB에서 플랜 정보 가져오기 (마운트 시)
+  // 7/15 룰 메시지 분기 (마운트 시 한 번 결정)
+  const preLaunch = isPreLaunchPeriod();
+
+  // 1. DB에서 플랜 정보 가져오기
   useEffect(() => {
     const fetchPlan = async () => {
       try {
@@ -124,16 +134,32 @@ function BillingPageContent() {
       const successUrl = `${origin}/billing/success`;
       const failUrl = `${origin}/billing/fail`;
 
+      // ⭐ v17 fix: customerEmail / customerName 완전히 제거
+      // 토스 v2 SDK는 빈 문자열을 INVALID_REQUEST로 거부하는 경우가 있어
+      // 사용자 정보 없이는 옵션 객체에 아예 포함하지 않는 게 안전
       await payment.requestBillingAuth({
         method: 'CARD',
         successUrl,
         failUrl,
-        customerEmail: '',
-        customerName: '',
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('requestBillingAuth error:', err);
-      setError('결제창을 여는 중 오류가 발생했어요. 다시 시도해주세요.');
+
+      // ⭐ v17 fix: 진짜 에러 코드/메시지 사용자에게 노출 (디버깅용)
+      let errMsg = '결제창을 여는 중 오류가 발생했어요.';
+      if (err?.code) {
+        errMsg += `\n[${err.code}]`;
+      }
+      if (err?.message) {
+        errMsg += ` ${err.message}`;
+      }
+
+      // 사용자가 닫기를 누른 경우는 에러로 표시 X
+      if (err?.code === 'USER_CANCEL') {
+        setError(null);
+      } else {
+        setError(errMsg + '\n\n다시 시도해주세요.');
+      }
       setLoading(false);
     }
   };
@@ -162,14 +188,22 @@ function BillingPageContent() {
     );
   }
 
+  // 7/15 룰 메시지 결정
+  const trialTitle = preLaunch
+    ? '🎉 7월 31일까지 100% 무료!'
+    : '🎁 14일 무료체험 시작';
+  const trialDesc = preLaunch
+    ? '8월 1일부터 자동결제가 시작돼요.'
+    : '14일 후 자동결제가 시작돼요.';
+
   return (
     <main style={styles.container}>
       <div style={styles.logo}>🐾</div>
       <h1 style={styles.title}>결제 카드 등록</h1>
       <p style={styles.subtitle}>
-        구독 결제를 위해 카드를 등록해요.
+        구독을 시작하기 위해 카드를 등록해요.
         <br />
-        8월 1일부터 자동결제가 시작돼요.
+        {trialDesc}
       </p>
 
       <div style={styles.infoBox}>
@@ -184,19 +218,37 @@ function BillingPageContent() {
           </span>
         </div>
         <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
-          <span style={styles.infoLabel}>무료 체험 기간</span>
-          <span style={styles.infoValue}>14일 무료</span>
+          <span style={styles.infoLabel}>무료 체험</span>
+          <span style={styles.infoValue}>
+            {preLaunch ? '7/31까지' : '14일'}
+          </span>
         </div>
       </div>
 
-      <div style={styles.notice}>
-        💡 <b>지금 등록해도 결제는 8월 1일부터 시작돼요.</b>
-        <br />
-        • 8월 1일 이전에 가입하시면 7/31까지 전부 무료
-        <br />
-        • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 저장돼요
-        <br />
-        • 언제든 구독을 취소할 수 있어요
+      {/* ⭐ v17: 7/15 룰 메시지 분기 */}
+      <div style={preLaunch ? styles.noticeBrand : styles.notice}>
+        <div style={styles.noticeTitle}>{trialTitle}</div>
+        <div style={styles.noticeBody}>
+          {preLaunch ? (
+            <>
+              • 지금 등록해도 결제는 8월 1일부터 시작돼요
+              <br />
+              • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
+              <br />
+              • 언제든 구독을 취소할 수 있어요
+            </>
+          ) : (
+            <>
+              • 카드 등록 후 14일 동안 모든 기능 무료 이용
+              <br />
+              • 14일 후 자동으로 월 구독료가 결제돼요
+              <br />
+              • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
+              <br />
+              • 언제든 구독을 취소할 수 있어요
+            </>
+          )}
+        </div>
       </div>
 
       {error && <div style={styles.errorBox}>⚠️ {error}</div>}
@@ -248,7 +300,7 @@ function LoadingFallback() {
 }
 
 // ─────────────────────────────────────────
-// 인라인 스타일 (v3와 동일)
+// 인라인 스타일
 // ─────────────────────────────────────────
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -316,14 +368,36 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 18,
     fontWeight: 800,
   },
+  // ⭐ v17: pre-launch (7/15 이전) 강조 박스
+  noticeBrand: {
+    background: '#FFF4E6',
+    border: '1.5px solid #FFCDB8',
+    borderRadius: 14,
+    padding: '16px 18px',
+    marginBottom: 20,
+    color: '#374151',
+    lineHeight: 1.7,
+  },
+  // 일반 (14일 무료체험)
   notice: {
     background: '#F9FAFB',
-    borderRadius: 10,
-    padding: '14px 16px',
+    border: '1px solid #E5E7EB',
+    borderRadius: 14,
+    padding: '16px 18px',
     marginBottom: 20,
-    fontSize: 12,
+    color: '#374151',
+    lineHeight: 1.7,
+  },
+  noticeTitle: {
+    fontSize: 15,
+    fontWeight: 800,
+    color: '#FF6B35',
+    marginBottom: 8,
+  },
+  noticeBody: {
+    fontSize: 13,
     color: '#6B7280',
-    lineHeight: 1.6,
+    lineHeight: 1.7,
   },
   button: {
     width: '100%',
@@ -349,6 +423,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 16,
     color: '#DC2626',
     fontSize: 13,
+    whiteSpace: 'pre-wrap', // 에러 메시지 줄바꿈 처리
   },
   bottomSpacer: {
     height: 'env(safe-area-inset-bottom, 24px)',
