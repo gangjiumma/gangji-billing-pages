@@ -224,10 +224,10 @@ function BillingPageContent() {
   }
 
   const trialTitle = preLaunch
-    ? '🎉 7월 31일까지 100% 무료!'
+    ? '🎉 7월 29일까지 100% 무료!'
     : '🎁 14일 무료체험 시작';
   const trialDesc = preLaunch
-    ? '8월 1일부터 자동결제가 시작돼요.'
+    ? '7월 29일부터 자동결제가 시작돼요.'
     : '14일 후 자동결제가 시작돼요.';
 
   return (
@@ -254,7 +254,7 @@ function BillingPageContent() {
         <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
           <span style={styles.infoLabel}>무료 체험</span>
           <span style={styles.infoValue}>
-            {preLaunch ? '7/31까지' : '14일'}
+            {preLaunch ? '7/29까지' : '14일'}
           </span>
         </div>
       </div>
@@ -264,7 +264,7 @@ function BillingPageContent() {
         <div style={styles.noticeBody}>
           {preLaunch ? (
             <>
-              • 지금 등록해도 결제는 8월 1일부터 시작돼요
+              • 지금 등록해도 결제는 7월 29일부터 시작돼요
               <br />
               • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
               <br />
@@ -272,9 +272,9 @@ function BillingPageContent() {
             </>
           ) : (
             <>
-              • 카드 등록 후 14일 동안 모든 기능 무료 이용
+              • 7월 28일까지 모든 기능 무료 이용
               <br />
-              • 14일 후 자동으로 월 구독료가 결제돼요
+              • 7월 29일에 자동으로 월 구독료가 결제돼요
               <br />
               • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
               <br />
@@ -293,6 +293,29 @@ function BillingPageContent() {
           <pre style={styles.debugPre}>{debugInfo}</pre>
         </details>
       )}
+
+      {/* 약관 동의 + 환불정책 안내 */}
+      <div style={styles.termsBox}>
+        카드 등록 시 강쥐엄마의{' '}
+        <a
+          href="https://gangjiumma.kr/terms-of-service"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={styles.termsLink}
+        >
+          이용약관
+        </a>
+        {' '}및{' '}
+        <a
+          href="https://gangjiumma.kr/refund-policy"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={styles.termsLink}
+        >
+          환불정책
+        </a>
+        에 동의하는 것으로 간주됩니다.
+      </div>
 
       <button
         style={{
@@ -486,5 +509,18 @@ const styles: Record<string, React.CSSProperties> = {
   bottomSpacer: {
     height: 'env(safe-area-inset-bottom, 24px)',
     minHeight: 24,
+  },
+  termsBox: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 1.6,
+    textAlign: 'center' as const,
+    marginBottom: 14,
+    padding: '0 8px',
+  },
+  termsLink: {
+    color: '#FF6B35',
+    fontWeight: 700,
+    textDecoration: 'underline',
   },
 };
