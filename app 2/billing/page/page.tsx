@@ -11,15 +11,39 @@ const EDGE_FUNCTION_BASE =
   'https://druwwrpunuxpvjbsrcls.supabase.co/functions/v1/gangji-billing';
 
 // ─────────────────────────────────────────
-// 첫 결제일 = 등록 + 14일 (절대날짜 없음 — 누구나 동일)
+// 7/29 룰 — 첫 결제일 기준 메시지 분기
+// 정책:
+//  - 등록 시점 +14일이 7/29 KST 자정 이전 → 베타 출신 → 7/29 일괄 첫 결제
+//  - 등록 시점 +14일이 7/29 KST 자정 이후 → 신규 → 14일 후 첫 결제
 // ─────────────────────────────────────────
+const JULY_29_2026_KST = new Date('2026-07-29T00:00:00+09:00').getTime();
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+
+// 지금 카드 등록하면 7/29 룰을 적용받는지 여부
+// (등록 시점 +14일이 7/29 이전이면 베타 출신 → 7/29 결제)
+const isPreLaunchPeriod = () => (Date.now() + FOURTEEN_DAYS_MS) < JULY_29_2026_KST;
 
 // 지금 등록하면 첫 결제일이 언제인지 KST 'M월 D일' 형식으로 반환
 const computeFirstChargeLabel = (): string => {
-  const trialEnd = Date.now() + FOURTEEN_DAYS_MS;
-  const kst = new Date(trialEnd + 9 * 60 * 60 * 1000); // KST 변환
+  const now = Date.now();
+  const trialEnd = now + FOURTEEN_DAYS_MS;
+  if (trialEnd < JULY_29_2026_KST) {
+    return '7월 29일';
+  }
+  const d = new Date(trialEnd);
+  // KST 변환
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
   return `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일`;
+};
+
+// 무료체험 종료 라벨 (베타 출신 = '7월 28일까지', 신규 = '14일')
+const computeTrialEndLabel = (): string => {
+  const now = Date.now();
+  const trialEnd = now + FOURTEEN_DAYS_MS;
+  if (trialEnd < JULY_29_2026_KST) {
+    return '7월 28일까지';
+  }
+  return '14일';
 };
 
 declare global {
@@ -55,6 +79,8 @@ function BillingPageContent() {
   const [sdkReady, setSdkReady] = useState(false);
 
   const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || '';
+
+  const preLaunch = isPreLaunchPeriod();
 
   // 1. DB에서 플랜 정보 가져오기
   useEffect(() => {
@@ -227,10 +253,15 @@ function BillingPageContent() {
     );
   }
 
-  const firstChargeLabel = computeFirstChargeLabel(); // 등록+14일 (예: '7월 8일')
+  const firstChargeLabel = computeFirstChargeLabel(); // '7월 29일' or '8월 5일' 같은 동적 라벨
+  const trialEndLabel = computeTrialEndLabel();       // '7월 28일까지' or '14일'
 
-  const trialTitle = '🎁 14일 무료체험 시작';
-  const trialDesc = `${firstChargeLabel}부터 자동결제가 시작돼요.`;
+  const trialTitle = preLaunch
+    ? `🎉 ${firstChargeLabel}까지 100% 무료!`
+    : '🎁 14일 무료체험 시작';
+  const trialDesc = preLaunch
+    ? `${firstChargeLabel}부터 자동결제가 시작돼요.`
+    : `${firstChargeLabel}부터 자동결제가 시작돼요.`;
 
   return (
     <main style={styles.container}>
@@ -256,23 +287,33 @@ function BillingPageContent() {
         <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
           <span style={styles.infoLabel}>무료 체험</span>
           <span style={styles.infoValue}>
-            14일
+            {trialEndLabel}
           </span>
         </div>
       </div>
 
-      <div style={styles.notice}>
+      <div style={preLaunch ? styles.noticeBrand : styles.notice}>
         <div style={styles.noticeTitle}>{trialTitle}</div>
         <div style={styles.noticeBody}>
-          • 14일 동안 모든 기능 무료 이용
-          <br />
-          • {firstChargeLabel}에 자동으로 월 구독료가 결제돼요
-          <br />
-          • <b>7월 가입 사장님은 라이트 플랜 평생 무료!</b>
-          <br />
-          • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
-          <br />
-          • 언제든 구독을 취소할 수 있어요
+          {preLaunch ? (
+            <>
+              • 지금 등록해도 결제는 {firstChargeLabel}부터 시작돼요
+              <br />
+              • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
+              <br />
+              • 언제든 구독을 취소할 수 있어요
+            </>
+          ) : (
+            <>
+              • 14일 동안 모든 기능 무료 이용
+              <br />
+              • {firstChargeLabel}에 자동으로 월 구독료가 결제돼요
+              <br />
+              • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
+              <br />
+              • 언제든 구독을 취소할 수 있어요
+            </>
+          )}
         </div>
       </div>
 
