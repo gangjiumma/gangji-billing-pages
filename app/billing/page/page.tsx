@@ -11,11 +11,11 @@ const EDGE_FUNCTION_BASE =
   'https://druwwrpunuxpvjbsrcls.supabase.co/functions/v1/gangji-billing';
 
 // ─────────────────────────────────────────
-// 첫 결제일 계산 (mode 분기)
-//   trial     : 등록 + 14일 후 첫 결제 (기본 — 처음 이용자)
-//   immediate : 등록 즉시 결제 시작, 다음날 00시(KST)부터 30일 카운트 (14일 체험 소진자)
+// 빌링 페이지 = 즉시결제 전용 (v3.3.1)
+//   무료체험은 대시보드에서 카드 등록 없이 진행됨.
+//   빌링 페이지에 오는 사람 = 체험 소진자 or 즉시 결제 희망자만.
+//   → 카드 등록 즉시 결제 시작 + 다음날 00시(KST)부터 30일 카운트.
 // ─────────────────────────────────────────
-const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * ONE_DAY_MS;
 
@@ -25,12 +25,8 @@ const toKstLabel = (ms: number): string => {
   return `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일`;
 };
 
-// trial 모드: 지금 등록하면 등록+14일이 첫 결제일
-const computeTrialChargeLabel = (): string => toKstLabel(Date.now() + FOURTEEN_DAYS_MS);
-
-// immediate 모드: 다음 결제일(30일 뒤) — 오늘 결제 즉시 시작 + 다음날 00시(KST) 카운트 기준
-// 오늘 결제분은 오늘까지 → 다음 30일 이용기간의 마지막 날 = 오늘 + 30일 (표시용)
-const computeImmediateNextChargeLabel = (): string => toKstLabel(Date.now() + THIRTY_DAYS_MS);
+// 다음 결제일 = 오늘 결제 즉시 시작 + 다음날 00시(KST) 카운트 기준 30일 뒤
+const computeNextChargeLabel = (): string => toKstLabel(Date.now() + THIRTY_DAYS_MS);
 
 declare global {
   interface Window {
@@ -57,11 +53,6 @@ function BillingPageContent() {
   const orderId = params.get('orderId') || '';
   const planId = params.get('plan') || 'lite';
   const returnTo = params.get('returnTo') || '';
-  // ⭐ mode 파라미터 (v3.3+):
-  //   'trial'(기본)     = 처음 이용자 → 14일 무료 체험 후 첫 결제
-  //   'immediate'       = 14일 체험 소진자 → 결제 즉시 시작, 다음날 00시(KST)부터 30일 카운트
-  // PlanClient가 business_subscriptions 상태 조회 후 URL로 넘김
-  const mode = (params.get('mode') === 'immediate' ? 'immediate' : 'trial') as 'trial' | 'immediate';
 
   const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
@@ -247,22 +238,17 @@ function BillingPageContent() {
     );
   }
 
-  // mode에 따라 라벨/문구 분기
-  const isTrial = mode === 'trial';
-  const chargeLabel = isTrial ? computeTrialChargeLabel() : computeImmediateNextChargeLabel();
-  const subtitleDesc = isTrial
-    ? `${chargeLabel}부터 자동결제가 시작돼요.`
-    : `카드 등록 즉시 이용이 시작돼요.`;
-  const noticeTitle = isTrial ? '🎁 14일 무료체험 시작' : '✅ 바로 이용 시작';
+  // 즉시결제 전용 (v3.3.1)
+  const nextChargeLabel = computeNextChargeLabel();
 
   return (
     <main style={styles.container}>
       <div style={styles.logo}>🐾</div>
       <h1 style={styles.title}>결제 카드 등록</h1>
       <p style={styles.subtitle}>
-        구독을 시작하기 위해 카드를 등록해요.
+        카드를 등록하면 결제가 진행되고
         <br />
-        {subtitleDesc}
+        바로 이용을 시작할 수 있어요.
       </p>
 
       <div style={styles.infoBox}>
@@ -276,45 +262,24 @@ function BillingPageContent() {
             {planInfo.price_monthly.toLocaleString()}원
           </span>
         </div>
-        {isTrial ? (
-          <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
-            <span style={styles.infoLabel}>무료 체험</span>
-            <span style={styles.infoValue}>14일</span>
-          </div>
-        ) : (
-          <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
-            <span style={styles.infoLabel}>이용 시작</span>
-            <span style={styles.infoValue}>결제 즉시</span>
-          </div>
-        )}
+        <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
+          <span style={styles.infoLabel}>이용 시작</span>
+          <span style={styles.infoValue}>결제 즉시</span>
+        </div>
       </div>
 
       <div style={styles.notice}>
-        <div style={styles.noticeTitle}>{noticeTitle}</div>
+        <div style={styles.noticeTitle}>✅ 바로 이용 시작</div>
         <div style={styles.noticeBody}>
-          {isTrial ? (
-            <>
-              • 14일 동안 모든 기능 무료 이용
-              <br />
-              • {chargeLabel}에 자동으로 월 구독료가 결제돼요
-              <br />
-              • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
-              <br />
-              • 언제든 구독을 취소할 수 있어요
-            </>
-          ) : (
-            <>
-              • 카드 등록 즉시 결제가 진행되고 바로 이용할 수 있어요
-              <br />
-              • 이용 기간은 <b>내일 00시부터 30일간</b> 카운트돼요
-              <br />
-              • 다음 결제 예정일은 <b>{chargeLabel}</b>이에요
-              <br />
-              • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
-              <br />
-              • 언제든 구독을 취소할 수 있어요
-            </>
-          )}
+          • 카드 등록 즉시 결제가 진행되고 바로 이용할 수 있어요
+          <br />
+          • 이용 기간은 <b>내일 00시부터 30일간</b> 카운트돼요
+          <br />
+          • 다음 결제 예정일은 <b>{nextChargeLabel}</b>이에요
+          <br />
+          • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
+          <br />
+          • 언제든 구독을 취소할 수 있어요
         </div>
       </div>
 
@@ -363,8 +328,6 @@ function BillingPageContent() {
           ? '결제창을 여는 중...'
           : !sdkReady
           ? '결제 시스템 준비 중...'
-          : isTrial
-          ? '카드 등록하고 무료체험 시작하기'
           : '카드 등록하고 결제 진행하기'}
       </button>
 
