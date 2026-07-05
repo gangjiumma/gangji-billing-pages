@@ -11,16 +11,26 @@ const EDGE_FUNCTION_BASE =
   'https://druwwrpunuxpvjbsrcls.supabase.co/functions/v1/gangji-billing';
 
 // ─────────────────────────────────────────
-// 첫 결제일 = 등록 + 14일 (절대날짜 없음 — 누구나 동일)
+// 첫 결제일 계산 (mode 분기)
+//   trial     : 등록 + 14일 후 첫 결제 (기본 — 처음 이용자)
+//   immediate : 등록 즉시 결제 시작, 다음날 00시(KST)부터 30일 카운트 (14일 체험 소진자)
 // ─────────────────────────────────────────
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const THIRTY_DAYS_MS = 30 * ONE_DAY_MS;
 
-// 지금 등록하면 첫 결제일이 언제인지 KST 'M월 D일' 형식으로 반환
-const computeFirstChargeLabel = (): string => {
-  const trialEnd = Date.now() + FOURTEEN_DAYS_MS;
-  const kst = new Date(trialEnd + 9 * 60 * 60 * 1000); // KST 변환
+// KST 기준 'M월 D일'
+const toKstLabel = (ms: number): string => {
+  const kst = new Date(ms + 9 * 60 * 60 * 1000);
   return `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일`;
 };
+
+// trial 모드: 지금 등록하면 등록+14일이 첫 결제일
+const computeTrialChargeLabel = (): string => toKstLabel(Date.now() + FOURTEEN_DAYS_MS);
+
+// immediate 모드: 다음 결제일(30일 뒤) — 오늘 결제 즉시 시작 + 다음날 00시(KST) 카운트 기준
+// 오늘 결제분은 오늘까지 → 다음 30일 이용기간의 마지막 날 = 오늘 + 30일 (표시용)
+const computeImmediateNextChargeLabel = (): string => toKstLabel(Date.now() + THIRTY_DAYS_MS);
 
 declare global {
   interface Window {
@@ -46,6 +56,12 @@ function BillingPageContent() {
   const customerKey = params.get('customerKey') || '';
   const orderId = params.get('orderId') || '';
   const planId = params.get('plan') || 'lite';
+  const returnTo = params.get('returnTo') || '';
+  // ⭐ mode 파라미터 (v3.3+):
+  //   'trial'(기본)     = 처음 이용자 → 14일 무료 체험 후 첫 결제
+  //   'immediate'       = 14일 체험 소진자 → 결제 즉시 시작, 다음날 00시(KST)부터 30일 카운트
+  // PlanClient가 business_subscriptions 상태 조회 후 URL로 넘김
+  const mode = (params.get('mode') === 'immediate' ? 'immediate' : 'trial') as 'trial' | 'immediate';
 
   const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
@@ -148,8 +164,12 @@ function BillingPageContent() {
       console.log('[Billing] payment instance:', payment);
 
       const origin = window.location.origin;
-      const successUrl = `${origin}/billing/success`;
-      const failUrl = `${origin}/billing/fail`;
+      const successUrl = returnTo
+        ? `${origin}/billing/success?returnTo=${encodeURIComponent(returnTo)}`
+        : `${origin}/billing/success`;
+      const failUrl = returnTo
+        ? `${origin}/billing/fail?returnTo=${encodeURIComponent(returnTo)}`
+        : `${origin}/billing/fail`;
 
       // ⭐ v17 fix: customerEmail / customerName 더미값으로 채워넣기
       // 공식 샘플 코드도 더미값을 넣음 (https://velog.io/@yoonvelog/...)
@@ -159,8 +179,8 @@ function BillingPageContent() {
         method: 'CARD' as const,
         successUrl,
         failUrl,
-        customerEmail: 'customer@gangji-mama.com',  // 더미 이메일
-        customerName: '강쥐엄마 회원',                 // 더미 이름
+        customerEmail: 'customer@animai.biz',  // 더미 이메일 (AnimAI 리브랜딩)
+        customerName: 'AnimAI 사장님',           // 더미 이름
       };
       console.log('[Billing] requestPayload:', requestPayload);
 
@@ -227,10 +247,13 @@ function BillingPageContent() {
     );
   }
 
-  const firstChargeLabel = computeFirstChargeLabel(); // 등록+14일 (예: '7월 8일')
-
-  const trialTitle = '🎁 14일 무료체험 시작';
-  const trialDesc = `${firstChargeLabel}부터 자동결제가 시작돼요.`;
+  // mode에 따라 라벨/문구 분기
+  const isTrial = mode === 'trial';
+  const chargeLabel = isTrial ? computeTrialChargeLabel() : computeImmediateNextChargeLabel();
+  const subtitleDesc = isTrial
+    ? `${chargeLabel}부터 자동결제가 시작돼요.`
+    : `카드 등록 즉시 이용이 시작돼요.`;
+  const noticeTitle = isTrial ? '🎁 14일 무료체험 시작' : '✅ 바로 이용 시작';
 
   return (
     <main style={styles.container}>
@@ -239,7 +262,7 @@ function BillingPageContent() {
       <p style={styles.subtitle}>
         구독을 시작하기 위해 카드를 등록해요.
         <br />
-        {trialDesc}
+        {subtitleDesc}
       </p>
 
       <div style={styles.infoBox}>
@@ -253,26 +276,45 @@ function BillingPageContent() {
             {planInfo.price_monthly.toLocaleString()}원
           </span>
         </div>
-        <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
-          <span style={styles.infoLabel}>무료 체험</span>
-          <span style={styles.infoValue}>
-            14일
-          </span>
-        </div>
+        {isTrial ? (
+          <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
+            <span style={styles.infoLabel}>무료 체험</span>
+            <span style={styles.infoValue}>14일</span>
+          </div>
+        ) : (
+          <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
+            <span style={styles.infoLabel}>이용 시작</span>
+            <span style={styles.infoValue}>결제 즉시</span>
+          </div>
+        )}
       </div>
 
       <div style={styles.notice}>
-        <div style={styles.noticeTitle}>{trialTitle}</div>
+        <div style={styles.noticeTitle}>{noticeTitle}</div>
         <div style={styles.noticeBody}>
-          • 14일 동안 모든 기능 무료 이용
-          <br />
-          • {firstChargeLabel}에 자동으로 월 구독료가 결제돼요
-          <br />
-          • <b>7월 가입 사장님은 라이트 플랜 평생 무료!</b>
-          <br />
-          • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
-          <br />
-          • 언제든 구독을 취소할 수 있어요
+          {isTrial ? (
+            <>
+              • 14일 동안 모든 기능 무료 이용
+              <br />
+              • {chargeLabel}에 자동으로 월 구독료가 결제돼요
+              <br />
+              • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
+              <br />
+              • 언제든 구독을 취소할 수 있어요
+            </>
+          ) : (
+            <>
+              • 카드 등록 즉시 결제가 진행되고 바로 이용할 수 있어요
+              <br />
+              • 이용 기간은 <b>내일 00시부터 30일간</b> 카운트돼요
+              <br />
+              • 다음 결제 예정일은 <b>{chargeLabel}</b>이에요
+              <br />
+              • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
+              <br />
+              • 언제든 구독을 취소할 수 있어요
+            </>
+          )}
         </div>
       </div>
 
@@ -288,7 +330,7 @@ function BillingPageContent() {
 
       {/* 약관 동의 + 환불정책 안내 */}
       <div style={styles.termsBox}>
-        카드 등록 시 강쥐엄마의{' '}
+        카드 등록 시 AnimAI(㈜비타니마)의{' '}
         <a
           href="https://gangjiumma.kr/terms-of-service"
           target="_blank"
@@ -321,7 +363,9 @@ function BillingPageContent() {
           ? '결제창을 여는 중...'
           : !sdkReady
           ? '결제 시스템 준비 중...'
-          : '카드 등록하고 시작하기'}
+          : isTrial
+          ? '카드 등록하고 무료체험 시작하기'
+          : '카드 등록하고 결제 진행하기'}
       </button>
 
       <div style={styles.bottomSpacer} />

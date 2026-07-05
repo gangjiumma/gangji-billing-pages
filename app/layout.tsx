@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: '강쥐엄마 — 결제',
-  description: '강쥐엄마 사장님 구독 결제 페이지',
+  title: 'AnimAI — 결제',
+  description: 'AnimAI(㈜비타니마) 사장님 구독 결제 페이지',
   robots: {
     index: false,
     follow: false,
