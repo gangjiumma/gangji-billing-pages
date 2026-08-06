@@ -21,34 +21,48 @@ function BillingFailContent() {
   const params = useSearchParams();
   const errorCode = params.get('code') || 'UNKNOWN';
   const errorMessageRaw = params.get('message') || '알 수 없는 오류가 발생했어요.';
+  const returnTo = params.get('returnTo') || '';
 
   const friendly = FRIENDLY_MESSAGES[errorCode];
   const displayMessage = friendly || errorMessageRaw;
 
   useEffect(() => {
-    const notify = () => {
-      try {
-        if (
-          typeof window !== 'undefined' &&
-          (window as any).ReactNativeWebView?.postMessage
-        ) {
-          (window as any).ReactNativeWebView.postMessage(
+    if (typeof window === 'undefined') return;
+
+    const rnWebView = (window as any).ReactNativeWebView;
+
+    // ── ① 앱(WebView): 기존 그대로 ──
+    if (rnWebView?.postMessage) {
+      const notify = () => {
+        try {
+          rnWebView.postMessage(
             JSON.stringify({
               type: 'BILLING_AUTH_FAIL',
               code: errorCode,
               message: displayMessage,
             }),
           );
+        } catch (e) {
+          console.error('postMessage failed:', e);
         }
-      } catch (e) {
-        console.error('postMessage failed:', e);
-      }
-    };
+      };
+      notify();
+      const t = setTimeout(notify, 200);
+      return () => clearTimeout(t);
+    }
 
-    notify();
-    const t = setTimeout(notify, 200);
-    return () => clearTimeout(t);
-  }, [errorCode, displayMessage]);
+    // ── ② 웹(PC·태블릿): 대시보드로 실패 코드와 함께 복귀 ──
+    if (!returnTo) return;   // returnTo 없으면 이 페이지에 머물며 안내만
+    try {
+      const url = new URL(returnTo);
+      url.searchParams.set('billing', 'fail');
+      url.searchParams.set('billing_code', errorCode);
+      const t = setTimeout(() => window.location.replace(url.toString()), 1200);
+      return () => clearTimeout(t);
+    } catch (e) {
+      console.error('[billing/fail] returnTo 파싱 실패:', e);
+    }
+  }, [errorCode, displayMessage, returnTo]);
 
   const handleGoBack = () => {
     try {

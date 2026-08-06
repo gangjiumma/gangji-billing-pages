@@ -11,22 +11,16 @@ const EDGE_FUNCTION_BASE =
   'https://druwwrpunuxpvjbsrcls.supabase.co/functions/v1/gangji-billing';
 
 // ─────────────────────────────────────────
-// 빌링 페이지 = 즉시결제 전용 (v3.3.1)
-//   무료체험은 대시보드에서 카드 등록 없이 진행됨.
-//   빌링 페이지에 오는 사람 = 체험 소진자 or 즉시 결제 희망자만.
-//   → 카드 등록 즉시 결제 시작 + 다음날 00시(KST)부터 30일 카운트.
+// 첫 결제일 = 등록 + 14일 (절대날짜 없음 — 누구나 동일)
 // ─────────────────────────────────────────
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const THIRTY_DAYS_MS = 30 * ONE_DAY_MS;
+const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
-// KST 기준 'M월 D일'
-const toKstLabel = (ms: number): string => {
-  const kst = new Date(ms + 9 * 60 * 60 * 1000);
+// 지금 등록하면 첫 결제일이 언제인지 KST 'M월 D일' 형식으로 반환
+const computeFirstChargeLabel = (): string => {
+  const trialEnd = Date.now() + FOURTEEN_DAYS_MS;
+  const kst = new Date(trialEnd + 9 * 60 * 60 * 1000); // KST 변환
   return `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일`;
 };
-
-// 다음 결제일 = 오늘 결제 즉시 시작 + 다음날 00시(KST) 카운트 기준 30일 뒤
-const computeNextChargeLabel = (): string => toKstLabel(Date.now() + THIRTY_DAYS_MS);
 
 declare global {
   interface Window {
@@ -52,7 +46,7 @@ function BillingPageContent() {
   const customerKey = params.get('customerKey') || '';
   const orderId = params.get('orderId') || '';
   const planId = params.get('plan') || 'lite';
-  const returnTo = params.get('returnTo') || '';
+  const returnTo = params.get('returnTo') || '';   // 대시보드 복귀 주소 (web-mode)
 
   const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
@@ -155,12 +149,13 @@ function BillingPageContent() {
       console.log('[Billing] payment instance:', payment);
 
       const origin = window.location.origin;
-      const successUrl = returnTo
-        ? `${origin}/billing/success?returnTo=${encodeURIComponent(returnTo)}`
-        : `${origin}/billing/success`;
-      const failUrl = returnTo
-        ? `${origin}/billing/fail?returnTo=${encodeURIComponent(returnTo)}`
-        : `${origin}/billing/fail`;
+      // ⭐ web-mode: 토스 리다이렉트 후 success/fail 페이지가 대시보드로 돌려보낼 수 있게
+      //    plan · returnTo 를 쿼리로 릴레이 (토스는 authKey/customerKey만 덧붙임)
+      const relay = new URLSearchParams();
+      relay.set('plan', planId);
+      if (returnTo) relay.set('returnTo', returnTo);
+      const successUrl = `${origin}/billing/success?${relay.toString()}`;
+      const failUrl = `${origin}/billing/fail?${relay.toString()}`;
 
       // ⭐ v17 fix: customerEmail / customerName 더미값으로 채워넣기
       // 공식 샘플 코드도 더미값을 넣음 (https://velog.io/@yoonvelog/...)
@@ -170,8 +165,8 @@ function BillingPageContent() {
         method: 'CARD' as const,
         successUrl,
         failUrl,
-        customerEmail: 'customer@animai.biz',  // 더미 이메일 (AnimAI 리브랜딩)
-        customerName: 'AnimAI 사장님',           // 더미 이름
+        customerEmail: 'customer@gangji-mama.com',  // 더미 이메일
+        customerName: '강쥐엄마 회원',                 // 더미 이름
       };
       console.log('[Billing] requestPayload:', requestPayload);
 
@@ -238,17 +233,19 @@ function BillingPageContent() {
     );
   }
 
-  // 즉시결제 전용 (v3.3.1)
-  const nextChargeLabel = computeNextChargeLabel();
+  const firstChargeLabel = computeFirstChargeLabel(); // 등록+14일 (예: '7월 8일')
+
+  const trialTitle = '🎁 14일 무료체험 시작';
+  const trialDesc = `${firstChargeLabel}부터 자동결제가 시작돼요.`;
 
   return (
     <main style={styles.container}>
       <div style={styles.logo}>🐾</div>
       <h1 style={styles.title}>결제 카드 등록</h1>
       <p style={styles.subtitle}>
-        카드를 등록하면 결제가 진행되고
+        구독을 시작하기 위해 카드를 등록해요.
         <br />
-        바로 이용을 시작할 수 있어요.
+        {trialDesc}
       </p>
 
       <div style={styles.infoBox}>
@@ -263,19 +260,21 @@ function BillingPageContent() {
           </span>
         </div>
         <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
-          <span style={styles.infoLabel}>이용 시작</span>
-          <span style={styles.infoValue}>결제 즉시</span>
+          <span style={styles.infoLabel}>무료 체험</span>
+          <span style={styles.infoValue}>
+            14일
+          </span>
         </div>
       </div>
 
       <div style={styles.notice}>
-        <div style={styles.noticeTitle}>✅ 바로 이용 시작</div>
+        <div style={styles.noticeTitle}>{trialTitle}</div>
         <div style={styles.noticeBody}>
-          • 카드 등록 즉시 결제가 진행되고 바로 이용할 수 있어요
+          • 14일 동안 모든 기능 무료 이용
           <br />
-          • 이용 기간은 <b>내일 00시부터 30일간</b> 카운트돼요
+          • {firstChargeLabel}에 자동으로 월 구독료가 결제돼요
           <br />
-          • 다음 결제 예정일은 <b>{nextChargeLabel}</b>이에요
+          • <b>7월 가입 사장님은 라이트 플랜 평생 무료!</b>
           <br />
           • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
           <br />
@@ -295,7 +294,7 @@ function BillingPageContent() {
 
       {/* 약관 동의 + 환불정책 안내 */}
       <div style={styles.termsBox}>
-        카드 등록 시 AnimAI(㈜비타니마)의{' '}
+        카드 등록 시 강쥐엄마의{' '}
         <a
           href="https://gangjiumma.kr/terms-of-service"
           target="_blank"
@@ -328,7 +327,7 @@ function BillingPageContent() {
           ? '결제창을 여는 중...'
           : !sdkReady
           ? '결제 시스템 준비 중...'
-          : '카드 등록하고 결제 진행하기'}
+          : '카드 등록하고 시작하기'}
       </button>
 
       <div style={styles.bottomSpacer} />
