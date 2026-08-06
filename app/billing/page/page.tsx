@@ -165,8 +165,8 @@ function BillingPageContent() {
         method: 'CARD' as const,
         successUrl,
         failUrl,
-        customerEmail: 'customer@gangji-mama.com',  // 더미 이메일
-        customerName: '강쥐엄마 회원',                 // 더미 이름
+        customerEmail: 'customer@animai.biz',  // 더미 이메일
+        customerName: 'AnimAI 사장님',                 // 더미 이름
       };
       console.log('[Billing] requestPayload:', requestPayload);
 
