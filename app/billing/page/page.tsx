@@ -10,17 +10,7 @@ import Script from 'next/script';
 const EDGE_FUNCTION_BASE =
   'https://druwwrpunuxpvjbsrcls.supabase.co/functions/v1/gangji-billing';
 
-// ─────────────────────────────────────────
-// 첫 결제일 = 등록 + 14일 (절대날짜 없음 — 누구나 동일)
-// ─────────────────────────────────────────
-const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
-// 지금 등록하면 첫 결제일이 언제인지 KST 'M월 D일' 형식으로 반환
-const computeFirstChargeLabel = (): string => {
-  const trialEnd = Date.now() + FOURTEEN_DAYS_MS;
-  const kst = new Date(trialEnd + 9 * 60 * 60 * 1000); // KST 변환
-  return `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일`;
-};
 
 declare global {
   interface Window {
@@ -165,8 +155,8 @@ function BillingPageContent() {
         method: 'CARD' as const,
         successUrl,
         failUrl,
-        customerEmail: 'customer@animai.biz',  // 더미 이메일
-        customerName: 'AnimAI 사장님',                 // 더미 이름
+        customerEmail: 'customer@gangji-mama.com',  // 더미 이메일
+        customerName: '강쥐엄마 회원',                 // 더미 이름
       };
       console.log('[Billing] requestPayload:', requestPayload);
 
@@ -233,19 +223,16 @@ function BillingPageContent() {
     );
   }
 
-  const firstChargeLabel = computeFirstChargeLabel(); // 등록+14일 (예: '7월 8일')
-
-  const trialTitle = '🎁 14일 무료체험 시작';
-  const trialDesc = `${firstChargeLabel}부터 자동결제가 시작돼요.`;
+  // 오늘 = 매월 결제일 (즉시 결제 정책)
+  const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const billingDay = todayKst.getUTCDate();
 
   return (
     <main style={styles.container}>
       <div style={styles.logo}>🐾</div>
       <h1 style={styles.title}>결제 카드 등록</h1>
       <p style={styles.subtitle}>
-        구독을 시작하기 위해 카드를 등록해요.
-        <br />
-        {trialDesc}
+        카드를 등록하면 바로 결제되고 이용이 시작돼요.
       </p>
 
       <div style={styles.infoBox}>
@@ -260,21 +247,19 @@ function BillingPageContent() {
           </span>
         </div>
         <div style={{ ...styles.infoRow, ...styles.infoRowDivider }}>
-          <span style={styles.infoLabel}>무료 체험</span>
+          <span style={styles.infoLabel}>결제일</span>
           <span style={styles.infoValue}>
-            14일
+            매월 {billingDay}일
           </span>
         </div>
       </div>
 
       <div style={styles.notice}>
-        <div style={styles.noticeTitle}>{trialTitle}</div>
+        <div style={styles.noticeTitle}>💳 지금 결제 · 즉시 이용</div>
         <div style={styles.noticeBody}>
-          • 14일 동안 모든 기능 무료 이용
+          • 카드 등록과 동시에 {planInfo.price_monthly.toLocaleString()}원이 결제돼요
           <br />
-          • {firstChargeLabel}에 자동으로 월 구독료가 결제돼요
-          <br />
-          • <b>7월 가입 사장님은 라이트 플랜 평생 무료!</b>
+          • 이후 매월 {billingDay}일에 자동 갱신돼요
           <br />
           • 카드 정보는 토스페이먼츠 보안 서버에 안전하게 보관돼요
           <br />
